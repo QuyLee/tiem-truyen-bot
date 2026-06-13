@@ -44,11 +44,13 @@ QUY TẮC:
 - Giữ tông giọng gốc (ấm áp/triết lý) trừ khi được yêu cầu đổi
 - Trả về kịch bản ĐÃ CHỈNH SỬA HOÀN CHỈNH, không giải thích"""
 
-SYSTEM_SEO = """Bạn là chuyên gia SEO YouTube cho kênh kể chuyện tiếng Việt.
-Tạo gói SEO tối ưu, ngắn gọn, đúng format, không giải thích thừa."""
+SYSTEM_SEO = """Bạn là chuyên gia SEO YouTube cho kênh kể chuyện tiếng Việt "Tiệm Truyện Nhỏ Nhỏ".
+Tạo gói SEO tối ưu, ngắn gọn, đúng format, không giải thích thừa.
+Chỉ trả về đúng format được yêu cầu, không thêm lời mở đầu hay kết thúc."""
 
-SYSTEM_THUMB = """Bạn là art director chuyên tạo thumbnail YouTube viral cho kênh cổ tích Việt Nam.
-Tạo prompt hình ảnh AI chi tiết, đúng format, không giải thích thừa."""
+SYSTEM_THUMB = """Bạn là art director chuyên tạo thumbnail YouTube viral cho kênh cổ tích Việt Nam "Tiệm Truyện Nhỏ Nhỏ".
+Mascot của kênh là BiBi — chú đom đóm nhỏ chibi 3D, phát sáng vàng/xanh, luôn xuất hiện trong mọi thumbnail.
+Chỉ trả về đúng format được yêu cầu, không thêm lời mở đầu hay kết thúc."""
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,7 +78,7 @@ async def fetch_url_content(url: str) -> str:
             text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
             text = re.sub(r'<[^>]+>', ' ', text)
             text = re.sub(r'\s+', ' ', text).strip()
-            return text[:25000]  # đủ cho truyện dài
+            return text[:25000]
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -96,21 +98,24 @@ def split_message(text: str, limit: int = 4000):
         parts.append(text)
     return parts
 
-def escape_md(text: str) -> str:
-    for ch in r'_*[]()~`>#+-=|{}.!':
-        text = text.replace(ch, f'\\{ch}')
-    return text
+async def send_long_text(target, header: str, text: str, reply_markup=None):
+    """
+    Gửi văn bản dài an toàn: KHÔNG dùng parse_mode để tránh lỗi ký tự đặc biệt.
+    Tự động cắt nếu vượt 4000 ký tự.
+    """
+    full = f"{header}\n\n{text}" if header else text
+    parts = split_message(full, limit=4000)
+    for i, part in enumerate(parts):
+        markup = reply_markup if i == len(parts) - 1 else None
+        await target.reply_text(part, reply_markup=markup)
 
 async def send_script_as_file(target, script: str, version: int, story: dict, caption: str = ""):
     """
     Gửi kịch bản dưới dạng file .txt đính kèm trong Telegram.
-    target: update.message hoặc query.message
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    # Tên file: tiem_truyen_v1_20250613_1430.txt
     filename = f"tiem_truyen_v{version}_{timestamp}.txt"
 
-    # Nội dung file — thuần text, sẵn sàng đưa vào TTS tool
     header = (
         f"TIỆM TRUYỆN NHỎ NHỎ — KỊCH BẢN TTS\n"
         f"{'=' * 50}\n"
@@ -123,9 +128,8 @@ async def send_script_as_file(target, script: str, version: int, story: dict, ca
     )
     full_content = header + script + "\n"
 
-    # Encode UTF-8 → BytesIO (Telegram nhận file dạng bytes)
     file_bytes = BytesIO(full_content.encode("utf-8"))
-    file_bytes.name = filename  # Telegram dùng thuộc tính .name để đặt tên file
+    file_bytes.name = filename
 
     caption_text = caption or f"🎬 Kịch bản TTS v{version} — sẵn sàng đưa vào tool đọc!"
     await target.reply_document(
@@ -160,14 +164,9 @@ def _analyze_sync(raw: str) -> dict:
 
 # ─── Sinh kịch bản ────────────────────────────────────────────────────────────
 
-# Mỗi chunk tối đa ~3000 ký tự nội dung thô → ra ~1500 token kịch bản
-# Truyện ngắn (<4000 ký tự): 1 lần gọi
-# Truyện trung (~4000–12000): chia 3 phần (mở đầu / thân / kết)
-# Truyện dài (>12000): chia nhiều phần tự động
 CHUNK_SIZE = 4000
 
 def _chunk_raw(raw: str) -> list[str]:
-    """Chia nội dung thô thành các đoạn, cắt tại dấu câu gần nhất."""
     if len(raw) <= CHUNK_SIZE:
         return [raw]
     chunks = []
@@ -175,7 +174,6 @@ def _chunk_raw(raw: str) -> list[str]:
         if len(raw) <= CHUNK_SIZE:
             chunks.append(raw)
             break
-        # Tìm điểm cắt tự nhiên: ưu tiên xuống dòng, rồi dấu chấm
         cut = raw.rfind('\n', CHUNK_SIZE // 2, CHUNK_SIZE)
         if cut == -1:
             cut = raw.rfind('. ', CHUNK_SIZE // 2, CHUNK_SIZE)
@@ -199,7 +197,6 @@ def gen_script(story: dict) -> str:
     chunks = _chunk_raw(story["raw"])
     total = len(chunks)
 
-    # ── Truyện ngắn: 1 lần gọi ───────────────────────────────────────────────
     if total == 1:
         return call(
             SYSTEM_SCRIPT,
@@ -212,11 +209,9 @@ def gen_script(story: dict) -> str:
             model="claude-sonnet-4-6", tokens=8000
         )
 
-    # ── Truyện dài: viết theo phần rồi ghép ──────────────────────────────────
     parts_text = []
     for i, chunk in enumerate(chunks):
         if i == 0:
-            # Phần mở đầu: có Hook
             prompt = (
                 f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
                 f"{base_instruction}\n\n"
@@ -226,7 +221,6 @@ def gen_script(story: dict) -> str:
                 f"NỘI DUNG PHẦN NÀY:\n{chunk}"
             )
         elif i == total - 1:
-            # Phần cuối: có kết luận
             prompt = (
                 f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
                 f"{base_instruction}\n\n"
@@ -236,7 +230,6 @@ def gen_script(story: dict) -> str:
                 f"NỘI DUNG PHẦN NÀY:\n{chunk}"
             )
         else:
-            # Phần giữa: phát triển liên tục
             prompt = (
                 f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
                 f"{base_instruction}\n\n"
@@ -248,11 +241,9 @@ def gen_script(story: dict) -> str:
         part = call(SYSTEM_SCRIPT, prompt, model="claude-sonnet-4-6", tokens=4000)
         parts_text.append(part)
 
-    # Ghép tất cả phần lại, cách nhau 1 dòng trống
     return "\n\n".join(parts_text)
 
 def revise_script(history: list, feedback: str) -> str:
-    """Chỉnh sửa kịch bản dựa trên góp ý, giữ toàn bộ lịch sử hội thoại"""
     messages = history + [{"role": "user", "content": (
         f"Góp ý của tôi: {feedback}\n\n"
         "Hãy chỉnh sửa kịch bản theo góp ý trên và trả về TOÀN BỘ kịch bản hoàn chỉnh đã được cải thiện. "
@@ -260,31 +251,127 @@ def revise_script(history: list, feedback: str) -> str:
     )}]
     return call_with_history(SYSTEM_REVISE, messages, model="claude-sonnet-4-6", tokens=8000)
 
+# ─── FIX 1: gen_seo — prompt đầy đủ, 5 tiêu đề viral + phân tích + tags ──────
+
 def gen_seo(story: dict) -> str:
+    """
+    Tạo SEO package đầy đủ:
+    - 5 tiêu đề YouTube viral theo công thức storytelling
+    - Phân tích + gợi ý tiêu đề tốt nhất
+    - Tags dựa trên kịch bản đã chốt
+    """
+    # Lấy kịch bản nếu có (lưu ở story["script"]), fallback về summary
+    script_context = story.get("script", story.get("summary", ""))
+
     return call(
         SYSTEM_SEO,
-        f"Tạo SEO package cho video YouTube.\nTHỂ LOẠI: {story['genre']}\nTÓM TẮT: {story['summary']}\n\n"
-        "TITLE_1: [max 60 ký tự, có emoji, gây tò mò]\n"
-        "TITLE_2: [biến thể tập trung keyword]\n"
-        "TITLE_3: [biến thể cảm xúc]\n---\n"
-        "DESCRIPTION:\n[200-250 từ, 3 dòng đầu hook, có timestamps 00:00, keywords tự nhiên]\n---\n"
-        "TAGS: [tag1, tag2, ... 22 tags tiếng Việt]\n"
-        "HASHTAGS: #tag1 #tag2 ... 10 hashtags",
-        model="claude-haiku-4-5", tokens=700
+        f"""Tạo SEO package cho video YouTube kênh "Tiệm Truyện Nhỏ Nhỏ".
+
+THỂ LOẠI: {story['genre']}
+TÔNG GIỌNG: {story['tone']}
+TÓM TẮT CÂU CHUYỆN: {story['summary']}
+NỘI DUNG KỊCH BẢN (tham khảo để lấy từ khóa):
+{script_context[:1500]}
+
+=== YÊU CẦU 5 TIÊU ĐỀ YOUTUBE VIRAL ===
+
+Mỗi tiêu đề PHẢI:
+- Dưới 100 ký tự
+- Phong cách storytelling, đánh vào cảm xúc tò mò
+- Chứa ít nhất 1 con số
+- Từ khóa chính nằm trong 65 ký tự đầu
+- Từ "ngòi nổ" viết HOA nhưng chiếm dưới 30% tiêu đề
+- KHÔNG viết hoa toàn bộ tiêu đề
+
+Xoay vòng cấu trúc:
+- Tiêu đề 1: Vấn đề + Đối tượng + Ngòi nổ
+- Tiêu đề 2: Đối tượng + Vấn đề + Ngòi nổ
+- Tiêu đề 3: Ngòi nổ + Vấn đề
+- Tiêu đề 4-5: công thức tự chọn tốt nhất
+
+=== FORMAT TRẢ VỀ (giữ đúng, không thêm gì khác) ===
+
+TIÊU ĐỀ 1: [tiêu đề]
+TIÊU ĐỀ 2: [tiêu đề]
+TIÊU ĐỀ 3: [tiêu đề]
+TIÊU ĐỀ 4: [tiêu đề]
+TIÊU ĐỀ 5: [tiêu đề]
+
+PHÂN TÍCH & GỢI Ý CHỌN:
+Nên chọn tiêu đề số [X] vì [lý do SEO + thumbnail + cảm xúc, 3-5 câu]
+
+TAGS (20 tags, phân cách bằng dấu phẩy, không đánh số):
+[tag1, tag2, tag3, ...]""",
+        model="claude-sonnet-4-6",
+        tokens=1200
     )
 
-def gen_thumbnail(story: dict) -> str:
+# ─── FIX 2: gen_thumbnail — prompt đầy đủ, có BiBi + bầu trời đêm + chibi 3D ─
+
+def gen_thumbnail(story: dict, chosen_title: str = "") -> str:
+    """
+    Tạo prompt thumbnail AI với:
+    - BiBi (mascot đom đóm chibi 3D) xuyên suốt
+    - Bầu trời đêm + ánh trăng
+    - Phong cách cinematic, god rays, emotional
+    - Dựa trên tiêu đề đã chọn từ SEO (nếu có)
+    """
+    title_context = (
+        f"TIÊU ĐỀ ĐÃ CHỌN: {chosen_title}" if chosen_title
+        else f"TÓM TẮT CÂU CHUYỆN: {story['summary']}"
+    )
+    script_context = story.get("script", story.get("summary", ""))
+
     return call(
         SYSTEM_THUMB,
-        f"Tạo prompt thumbnail AI viral cho video YouTube.\n"
-        f"THỂ LOẠI: {story['genre']} | TÔNG: {story['tone']}\nTÓM TẮT: {story['summary']}\n\n"
-        "CONCEPT: [1-2 câu mô tả ý tưởng hình ảnh]\n"
-        "PROMPT_EN: [prompt chi tiết cho Midjourney/Flux — style, lighting, composition, mood]\n"
-        "PROMPT_VI: [prompt tiếng Việt]\n"
-        "TEXT_OVERLAY: [2-5 chữ in đậm]\n"
-        "FONT_STYLE: [bold / serif dramatic / handwritten]\n"
-        "COLOR_PALETTE: [3 màu hex]",
-        model="claude-haiku-4-5", tokens=500
+        f"""Tạo prompt thumbnail YouTube cho video kênh "Tiệm Truyện Nhỏ Nhỏ".
+
+THỂ LOẠI: {story['genre']} | TÔNG: {story['tone']}
+{title_context}
+NỘI DUNG KỊCH BẢN (tham khảo cảnh/nhân vật chính):
+{script_context[:1000]}
+
+=== YÊU CẦU BẮT BUỘC ===
+
+MASCOT BiBi (LUÔN CÓ MẶT — nhân vật xuyên suốt thương hiệu kênh):
+- BiBi là chú đom đóm nhỏ dễ thương, phong cách chibi 3D render
+- Cơ thể trong suốt phát sáng lung linh màu vàng/xanh lá nhẹ
+- Đôi cánh nhỏ mỏng manh, mắt tròn to biểu cảm
+- Biểu cảm phù hợp nội dung: ngạc nhiên/xúc động/tò mò/buồn bã
+- Vị trí: góc dưới trái hoặc bay gần nhân vật chính — nổi bật nhưng không che khuất
+- Xung quanh BiBi có các đốm sáng nhỏ như đom đóm lập lòe
+
+BỐI CẢNH BẮT BUỘC (bầu trời đêm huyền ảo):
+- Bầu trời đêm sâu thẳm màu xanh tím than/indigo
+- Ánh trăng rằm tròn sáng rõ, tạo god rays chiếu xuống
+- Có sao lấp lánh, mây mỏng huyền ảo hoặc bokeh ánh sáng
+- Không khí mờ ảo như khói mỏng, tăng chiều sâu
+
+KỸ THUẬT HÌNH ẢNH:
+- Tỷ lệ: 16:9, ultra-high resolution, 4K quality
+- Phong cách: cinematic, dramatic god rays, high contrast, emotionally charged
+- Ánh sáng: chiaroscuro mạnh — vùng sáng và tối tương phản rõ
+- Không có chữ/text trong ảnh
+- Nhân vật chính chibi 3D render, chiếm 60-70% frame, rule of thirds
+- Màu chủ đạo: tím than, xanh đêm, vàng ánh trăng, điểm xuyết đỏ/cam nếu cần cảm xúc mạnh
+
+=== FORMAT TRẢ VỀ (giữ đúng, không thêm gì khác) ===
+
+CONCEPT: [1-2 câu mô tả ý tưởng hình ảnh tổng thể]
+
+PROMPT_EN:
+[prompt tiếng Anh chi tiết 80-120 từ cho Midjourney/Flux/DALL-E — mô tả scene, BiBi, bầu trời đêm, nhân vật chính, lighting, mood, style]
+
+NEGATIVE_PROMPT:
+[những gì cần loại bỏ: text, watermark, blurry, ugly proportions, daytime...]
+
+TOOL_GỢI Ý: [Midjourney v6 / Flux Pro / DALL-E 3] — lý do ngắn gọn
+
+TEXT_OVERLAY: [2-5 chữ ngắn in đậm đặt trên ảnh sau khi gen]
+FONT_STYLE: [bold impact / serif dramatic / handwritten brush]
+COLOR_PALETTE: [3 màu hex chủ đạo]""",
+        model="claude-sonnet-4-6",
+        tokens=1000
     )
 
 # ─── Keyboards ────────────────────────────────────────────────────────────────
@@ -298,7 +385,6 @@ def main_menu():
     ])
 
 def script_action_menu():
-    """Menu sau khi xuất kịch bản — có nút góp ý và các nút khác"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ Góp ý chỉnh sửa kịch bản", callback_data="revise_prompt")],
         [InlineKeyboardButton("🔍 Tạo SEO", callback_data="seo"),
@@ -307,7 +393,6 @@ def script_action_menu():
     ])
 
 def after_revise_menu():
-    """Menu sau mỗi lần chỉnh sửa"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ Góp ý tiếp theo", callback_data="revise_prompt")],
         [InlineKeyboardButton("✅ Kịch bản đã ổn", callback_data="script_done")],
@@ -368,7 +453,6 @@ async def handle_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     loop = asyncio.get_event_loop()
     story = await loop.run_in_executor(None, lambda: _analyze_sync(raw))
 
-    # Reset dữ liệu cũ, lưu story mới
     ctx.user_data.clear()
     ctx.user_data["story"] = story
 
@@ -383,7 +467,6 @@ async def handle_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(summary_text, reply_markup=main_menu())
 
 async def process_revision(update: Update, ctx: ContextTypes.DEFAULT_TYPE, feedback: str):
-    """Xử lý góp ý và chỉnh sửa kịch bản"""
     story = ctx.user_data.get("story")
     history = ctx.user_data.get("script_history", [])
 
@@ -399,11 +482,12 @@ async def process_revision(update: Update, ctx: ContextTypes.DEFAULT_TYPE, feedb
     loop = asyncio.get_event_loop()
     revised = await loop.run_in_executor(None, lambda: revise_script(history, feedback))
 
-    # Cập nhật lịch sử hội thoại với góp ý + kịch bản mới
     ctx.user_data["script_history"] = history + [
         {"role": "user", "content": f"Góp ý: {feedback}\nHãy chỉnh sửa kịch bản theo góp ý và trả về hoàn chỉnh."},
         {"role": "assistant", "content": revised}
     ]
+    # FIX: cập nhật script mới nhất vào story để SEO/thumbnail dùng
+    ctx.user_data["story"]["script"] = revised
 
     await msg.delete()
 
@@ -449,7 +533,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(wait_msg)
         result = await loop.run_in_executor(None, lambda: gen_script(story))
 
-        # Lưu lịch sử hội thoại để dùng cho vòng lặp chỉnh sửa
+        # Lưu kịch bản vào story để SEO/thumbnail có thể dùng
+        ctx.user_data["story"]["script"] = result
+
         ctx.user_data["script_history"] = [
             {"role": "user", "content": (
                 f"Viết kịch bản TTS cho câu chuyện:\nTHỂ LOẠI: {story['genre']}\n"
@@ -465,7 +551,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=script_action_menu()
         )
 
-    # ── Góp ý — kích hoạt chế độ chờ nhập góp ý ──────────────────────────────
+    # ── Góp ý ─────────────────────────────────────────────────────────────────
     elif action == "revise_prompt":
         if not ctx.user_data.get("script_history"):
             await query.edit_message_text("⚠️ Chưa có kịch bản! Hãy tạo kịch bản trước.")
@@ -491,19 +577,51 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=other_output_menu()
         )
 
-    # ── SEO ───────────────────────────────────────────────────────────────────
+    # ── FIX: SEO — không dùng parse_mode, gửi plain text ─────────────────────
     elif action == "seo":
-        await query.edit_message_text("⏳ Đang tối ưu SEO... (~15 giây)")
+        await query.edit_message_text("⏳ Đang tối ưu SEO... (~20 giây)")
         result = await loop.run_in_executor(None, lambda: gen_seo(story))
-        await query.message.reply_text(f"🔍 *SEO PACKAGE*\n\n{result}", parse_mode="Markdown")
-        await query.message.reply_text("Bạn muốn tạo thêm gì?", reply_markup=other_output_menu())
 
-    # ── Thumbnail ─────────────────────────────────────────────────────────────
+        # Lưu tiêu đề được gợi ý để thumbnail dùng (parse từ kết quả)
+        ctx.user_data["seo_result"] = result
+
+        # Gửi plain text — KHÔNG dùng parse_mode để tránh crash ký tự đặc biệt
+        await send_long_text(
+            query.message,
+            "🔍 SEO PACKAGE",
+            result,
+            reply_markup=other_output_menu()
+        )
+
+    # ── FIX: Thumbnail — không dùng parse_mode, prompt đầy đủ ───────────────
     elif action == "thumbnail":
-        await query.edit_message_text("⏳ Đang tạo prompt thumbnail... (~15 giây)")
-        result = await loop.run_in_executor(None, lambda: gen_thumbnail(story))
-        await query.message.reply_text(f"🖼 *THUMBNAIL PROMPT*\n\n{result}", parse_mode="Markdown")
-        await query.message.reply_text("Bạn muốn tạo thêm gì?", reply_markup=other_output_menu())
+        await query.edit_message_text("⏳ Đang tạo prompt thumbnail... (~20 giây)")
+
+        # Lấy tiêu đề đã chọn từ SEO nếu có
+        seo_result = ctx.user_data.get("seo_result", "")
+        chosen_title = ""
+        if seo_result:
+            # Tìm dòng "PHÂN TÍCH & GỢI Ý CHỌN" để lấy tiêu đề được gợi ý
+            match = re.search(r'TIÊU ĐỀ (\d):', seo_result)
+            if "Nên chọn tiêu đề số" in seo_result:
+                num_match = re.search(r'Nên chọn tiêu đề số\s*(\d)', seo_result)
+                if num_match:
+                    num = num_match.group(1)
+                    title_match = re.search(rf'TIÊU ĐỀ {num}:\s*(.+)', seo_result)
+                    if title_match:
+                        chosen_title = title_match.group(1).strip()
+
+        result = await loop.run_in_executor(
+            None, lambda: gen_thumbnail(story, chosen_title)
+        )
+
+        # Gửi plain text — KHÔNG dùng parse_mode
+        await send_long_text(
+            query.message,
+            "🖼 THUMBNAIL PROMPT",
+            result,
+            reply_markup=other_output_menu()
+        )
 
     # ── Tất cả ────────────────────────────────────────────────────────────────
     elif action == "all":
@@ -515,20 +633,31 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"📄 Truyện: {raw_len:,} ký tự — {num_chunks} phần kịch bản\n"
             f"⏱ Ước tính: ~{wait_secs} giây\n\nVui lòng chờ..."
         )
-        script, seo, thumb = await asyncio.gather(
-            loop.run_in_executor(None, lambda: gen_script(story)),
-            loop.run_in_executor(None, lambda: gen_seo(story)),
-            loop.run_in_executor(None, lambda: gen_thumbnail(story)),
+
+        # Chạy song song: script + seo + thumbnail
+        script_result = await loop.run_in_executor(None, lambda: gen_script(story))
+
+        # Lưu script vào story trước khi gen SEO/thumbnail (dùng script làm context)
+        ctx.user_data["story"]["script"] = script_result
+
+        seo_result, thumb_result = await asyncio.gather(
+            loop.run_in_executor(None, lambda: gen_seo(ctx.user_data["story"])),
+            loop.run_in_executor(None, lambda: gen_thumbnail(ctx.user_data["story"])),
         )
+
         ctx.user_data["script_history"] = [
             {"role": "user", "content": f"Viết kịch bản TTS cho câu chuyện:\nTHỂ LOẠI: {story['genre']}\nTÔNG: {story['tone']}\nNỘI DUNG: {story['raw']}"},
-            {"role": "assistant", "content": script}
+            {"role": "assistant", "content": script_result}
         ]
         ctx.user_data["revision_count"] = 0
+        ctx.user_data["seo_result"] = seo_result
 
-        await send_script_as_file(query.message, script, version=1, story=story)
-        await query.message.reply_text(f"🔍 *SEO PACKAGE*\n\n{seo}", parse_mode="Markdown")
-        await query.message.reply_text(f"🖼 *THUMBNAIL PROMPT*\n\n{thumb}", parse_mode="Markdown")
+        await send_script_as_file(query.message, script_result, version=1, story=story)
+
+        # FIX: gửi plain text thay vì Markdown
+        await send_long_text(query.message, "🔍 SEO PACKAGE", seo_result)
+        await send_long_text(query.message, "🖼 THUMBNAIL PROMPT", thumb_result)
+
         await query.message.reply_text(
             "✅ Gói sản xuất hoàn tất!\nBạn muốn chỉnh sửa kịch bản không?",
             reply_markup=script_action_menu()
