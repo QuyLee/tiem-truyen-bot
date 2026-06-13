@@ -3,6 +3,8 @@ import re
 import asyncio
 import anthropic
 import httpx
+from io import BytesIO
+from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, MessageHandler, CommandHandler,
@@ -98,6 +100,39 @@ def escape_md(text: str) -> str:
     for ch in r'_*[]()~`>#+-=|{}.!':
         text = text.replace(ch, f'\\{ch}')
     return text
+
+async def send_script_as_file(target, script: str, version: int, story: dict, caption: str = ""):
+    """
+    Gửi kịch bản dưới dạng file .txt đính kèm trong Telegram.
+    target: update.message hoặc query.message
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    # Tên file: tiem_truyen_v1_20250613_1430.txt
+    filename = f"tiem_truyen_v{version}_{timestamp}.txt"
+
+    # Nội dung file — thuần text, sẵn sàng đưa vào TTS tool
+    header = (
+        f"TIỆM TRUYỆN NHỎ NHỎ — KỊCH BẢN TTS\n"
+        f"{'=' * 50}\n"
+        f"Phiên bản  : {version}\n"
+        f"Thể loại   : {story.get('genre', '')}\n"
+        f"Tông giọng : {story.get('tone', '')}\n"
+        f"Độ dài     : {story.get('duration', '')}\n"
+        f"Tạo lúc    : {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        f"{'=' * 50}\n\n"
+    )
+    full_content = header + script + "\n"
+
+    # Encode UTF-8 → BytesIO (Telegram nhận file dạng bytes)
+    file_bytes = BytesIO(full_content.encode("utf-8"))
+    file_bytes.name = filename  # Telegram dùng thuộc tính .name để đặt tên file
+
+    caption_text = caption or f"🎬 Kịch bản TTS v{version} — sẵn sàng đưa vào tool đọc!"
+    await target.reply_document(
+        document=file_bytes,
+        filename=filename,
+        caption=caption_text
+    )
 
 def _analyze_sync(raw: str) -> dict:
     result = call(
@@ -294,12 +329,9 @@ async def process_revision(update: Update, ctx: ContextTypes.DEFAULT_TYPE, feedb
 
     await msg.delete()
 
-    header = f"🎬 KỊCH BẢN TTS — Phiên bản {revision_count + 1}\n(Đã chỉnh theo: \"{feedback[:60]}{'...' if len(feedback)>60 else ''}\")\n\n"
-    parts = split_message(revised)
-    for i, part in enumerate(parts):
-        content = (header + part) if i == 0 else part
-        await update.message.reply_text(content)
-
+    version = revision_count + 1
+    caption = f"🎬 Kịch bản v{version} — đã chỉnh theo: \"{feedback[:60]}{'...' if len(feedback)>60 else ''}\""
+    await send_script_as_file(update.message, revised, version=version, story=story, caption=caption)
     await update.message.reply_text(
         f"✅ Đã chỉnh sửa xong lần {revision_count}!\nBạn muốn làm gì tiếp theo?",
         reply_markup=after_revise_menu()
@@ -339,13 +371,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         ctx.user_data["revision_count"] = 0
 
-        parts = split_message(result)
-        for i, part in enumerate(parts):
-            content = ("🎬 *KỊCH BẢN TTS — Phiên bản 1*\n\n" + part) if i == 0 else part
-            await query.message.reply_text(content, parse_mode="Markdown")
-
+        await send_script_as_file(query.message, result, version=1, story=story)
         await query.message.reply_text(
-            "✅ Kịch bản đã sẵn sàng!\nBạn muốn chỉnh sửa hay tạo output khác?",
+            "✅ Kịch bản v1 đã xuất ra file!\nBạn muốn chỉnh sửa hay tạo output khác?",
             reply_markup=script_action_menu()
         )
 
@@ -403,9 +431,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         ctx.user_data["revision_count"] = 0
 
-        for i, part in enumerate(split_message(script)):
-            content = ("🎬 *KỊCH BẢN TTS — Phiên bản 1*\n\n" + part) if i == 0 else part
-            await query.message.reply_text(content, parse_mode="Markdown")
+        await send_script_as_file(query.message, script, version=1, story=story)
         await query.message.reply_text(f"🔍 *SEO PACKAGE*\n\n{seo}", parse_mode="Markdown")
         await query.message.reply_text(f"🖼 *THUMBNAIL PROMPT*\n\n{thumb}", parse_mode="Markdown")
         await query.message.reply_text(
