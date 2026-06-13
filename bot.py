@@ -109,24 +109,44 @@ async def send_long_text(target, header: str, text: str, reply_markup=None):
         markup = reply_markup if i == len(parts) - 1 else None
         await target.reply_text(part, reply_markup=markup)
 
+def clean_script_text(text: str) -> str:
+    """
+    Làm sạch kịch bản trước khi ghi file:
+    - Bỏ các ký tự markdown: #, *, _, ---, ===
+    - Bỏ dòng trống thừa (giữ tối đa 1 dòng trống giữa các đoạn)
+    - Giữ nguyên bản văn xuôi thuần
+    """
+    lines = text.splitlines()
+    cleaned = []
+    prev_blank = False
+    for line in lines:
+        # Bỏ các heading markdown (# ## ###)
+        line = re.sub(r'^#{1,6}\s*', '', line)
+        # Bỏ bold/italic markdown (* ** _ __)
+        line = re.sub(r'\*{1,3}|_{1,2}', '', line)
+        # Bỏ dòng chỉ có dấu --- hoặc === hoặc ___
+        if re.match(r'^[-=_]{2,}\s*$', line.strip()):
+            continue
+        # Kiểm soát dòng trống: tối đa 1 dòng trống liên tiếp
+        if line.strip() == "":
+            if not prev_blank:
+                cleaned.append("")
+            prev_blank = True
+        else:
+            cleaned.append(line)
+            prev_blank = False
+    return "\n".join(cleaned).strip()
+
 async def send_script_as_file(target, script: str, version: int, story: dict, caption: str = ""):
     """
     Gửi kịch bản dưới dạng file .txt đính kèm trong Telegram.
+    File chỉ chứa văn bản thuần — không header, không ký tự đặc biệt.
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"tiem_truyen_v{version}_{timestamp}.txt"
 
-    header = (
-        f"TIỆM TRUYỆN NHỎ NHỎ — KỊCH BẢN TTS\n"
-        f"{'=' * 50}\n"
-        f"Phiên bản  : {version}\n"
-        f"Thể loại   : {story.get('genre', '')}\n"
-        f"Tông giọng : {story.get('tone', '')}\n"
-        f"Độ dài     : {story.get('duration', '')}\n"
-        f"Tạo lúc    : {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
-        f"{'=' * 50}\n\n"
-    )
-    full_content = header + script + "\n"
+    # Chỉ ghi nội dung kịch bản thuần, không có header metadata
+    full_content = clean_script_text(script) + "\n"
 
     file_bytes = BytesIO(full_content.encode("utf-8"))
     file_bytes.name = filename
@@ -374,6 +394,68 @@ COLOR_PALETTE: [3 màu hex chủ đạo]""",
         tokens=1000
     )
 
+
+# ─── Module: Ảnh minh hoạ ────────────────────────────────────────────────────
+
+SYSTEM_ILLUS = """Bạn là art director chuyên tạo prompt ảnh minh hoạ cho video kể chuyện YouTube.
+Phong cách nhất quán: chibi 3D render, dễ thương, cinematic lighting, màu sắc ấm áp huyền bí.
+Chỉ trả về đúng format được yêu cầu, không thêm lời mở đầu hay kết thúc."""
+
+def gen_illustration(story: dict) -> str:
+    """
+    Phân tích kịch bản xác định số ảnh phù hợp rồi sinh prompt cho từng ảnh.
+    Mỗi ảnh dùng được cho 10 giây đến 1 phút trên video.
+    Số lượng ảnh bằng số tình tiết đáng chú ý trong kịch bản.
+    """
+    script = story.get("script", story.get("summary", ""))
+    script_context = script[:12000]
+
+    return call(
+        SYSTEM_ILLUS,
+        f"""Tạo bộ prompt ảnh minh hoạ cho video YouTube kênh "Tiệm Truyện Nhỏ Nhỏ".
+
+THỂ LOẠI: {story['genre']} | TÔNG: {story['tone']}
+TÓM TẮT: {story['summary']}
+
+KỊCH BẢN ĐÃ CHỐT:
+{script_context}
+
+NHIỆM VỤ:
+Bước 1: Phân tích kịch bản, xác định các TÌNH TIẾT ĐÁNG CHÚ Ý bao gồm cảnh có cảm xúc mạnh, bước ngoặt, hành động quan trọng, cảnh mở đầu, cảnh kết. Mỗi tình tiết tương ứng 1 ảnh dùng được cho 10 giây đến 1 phút trên video. Số lượng ảnh tối thiểu 6, tối đa 20.
+Bước 2: Với mỗi tình tiết, viết 1 prompt ảnh minh hoạ theo format bên dưới.
+
+YÊU CẦU PHONG CÁCH áp dụng cho TẤT CẢ ảnh để đảm bảo nhất quán:
+
+NHÂN VẬT:
+Phong cách chibi 3D render, tỷ lệ đầu to thân nhỏ, dễ thương, biểu cảm rõ ràng.
+Màu sắc nhân vật ấm, đường nét mềm mại, bóng đổ mềm.
+Quần áo và trang phục phù hợp thời đại và bối cảnh câu chuyện.
+
+BỐI CẢNH VÀ ÁNH SÁNG:
+Cinematic lighting với ánh sáng có hướng rõ, tương phản nhẹ, không quá tối.
+Màu nền hài hoà theo tông đất, nâu gỗ, xanh rừng, vàng ánh nến.
+Có chiều sâu không gian với background blur nhẹ.
+Không có chữ hoặc text trong ảnh.
+
+KỸ THUẬT:
+Tỷ lệ 16:9, ultra-detailed, 4K quality, soft cel-shading 3D style.
+Nhân vật chiếm 50-70% frame theo rule of thirds.
+
+FORMAT TRẢ VỀ cho mỗi ảnh:
+
+ANH [số] - [tên tình tiết ngắn gọn tiếng Việt]
+THOI LUONG: [10s / 20s / 30s / 45s / 1 phut]
+PROMPT_EN: [prompt tiếng Anh 50-80 từ mô tả scene, nhân vật, cảm xúc, ánh sáng, bối cảnh]
+NEGATIVE: blurry, text, watermark, realistic photo, adult proportions, dark horror
+
+Phân cách mỗi block ảnh bằng 1 dòng trống. Sau tất cả ảnh thêm:
+TONG SO ANH: [số]
+TONG THOI LUONG: [tổng thời lượng ước tính]
+TOOL GỢI Ý: Midjourney v6 hoặc Flux Pro, dùng ảnh đầu tiên làm style reference cho các ảnh sau để nhân vật nhất quán.""",
+        model="claude-sonnet-4-6",
+        tokens=6000
+    )
+
 # ─── Keyboards ────────────────────────────────────────────────────────────────
 
 def main_menu():
@@ -381,7 +463,8 @@ def main_menu():
         [InlineKeyboardButton("🎬 Kịch bản TTS", callback_data="script"),
          InlineKeyboardButton("🔍 SEO", callback_data="seo")],
         [InlineKeyboardButton("🖼 Prompt Thumbnail", callback_data="thumbnail"),
-         InlineKeyboardButton("✨ Tất cả", callback_data="all")],
+         InlineKeyboardButton("🎨 Ảnh minh hoạ", callback_data="illustration")],
+        [InlineKeyboardButton("✨ Tất cả", callback_data="all")],
     ])
 
 def script_action_menu():
@@ -389,6 +472,7 @@ def script_action_menu():
         [InlineKeyboardButton("✏️ Góp ý chỉnh sửa kịch bản", callback_data="revise_prompt")],
         [InlineKeyboardButton("🔍 Tạo SEO", callback_data="seo"),
          InlineKeyboardButton("🖼 Tạo Thumbnail", callback_data="thumbnail")],
+        [InlineKeyboardButton("🎨 Ảnh minh hoạ", callback_data="illustration")],
         [InlineKeyboardButton("📖 Truyện mới", callback_data="new_story")],
     ])
 
@@ -398,6 +482,7 @@ def after_revise_menu():
         [InlineKeyboardButton("✅ Kịch bản đã ổn", callback_data="script_done")],
         [InlineKeyboardButton("🔍 Tạo SEO", callback_data="seo"),
          InlineKeyboardButton("🖼 Tạo Thumbnail", callback_data="thumbnail")],
+        [InlineKeyboardButton("🎨 Ảnh minh hoạ", callback_data="illustration")],
     ])
 
 def other_output_menu():
@@ -405,7 +490,8 @@ def other_output_menu():
         [InlineKeyboardButton("🎬 Kịch bản TTS", callback_data="script"),
          InlineKeyboardButton("🔍 SEO", callback_data="seo")],
         [InlineKeyboardButton("🖼 Thumbnail", callback_data="thumbnail"),
-         InlineKeyboardButton("📖 Truyện mới", callback_data="new_story")],
+         InlineKeyboardButton("🎨 Ảnh minh hoạ", callback_data="illustration")],
+        [InlineKeyboardButton("📖 Truyện mới", callback_data="new_story")],
     ])
 
 # ─── Handlers ─────────────────────────────────────────────────────────────────
@@ -623,6 +709,29 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=other_output_menu()
         )
 
+    # ── Ảnh minh hoạ ──────────────────────────────────────────────────────────
+    elif action == "illustration":
+        if not story.get("script"):
+            await query.edit_message_text(
+                "⚠️ Cần có kịch bản trước!\n\nHãy tạo kịch bản rồi quay lại tạo ảnh minh hoạ."
+            )
+            return
+        script_len = len(story.get("script", ""))
+        est_images = max(6, min(20, script_len // 400))
+        await query.edit_message_text(
+            f"⏳ Đang phân tích kịch bản và tạo prompt ảnh minh hoạ...\n\n"
+            f"📄 Kịch bản: {script_len:,} ký tự\n"
+            f"🎨 Ước tính: {est_images} ảnh\n"
+            f"⏱ Khoảng ~30 giây..."
+        )
+        result = await loop.run_in_executor(None, lambda: gen_illustration(story))
+        await send_long_text(
+            query.message,
+            "🎨 PROMPT ẢNH MINH HOẠ",
+            result,
+            reply_markup=other_output_menu()
+        )
+
     # ── Tất cả ────────────────────────────────────────────────────────────────
     elif action == "all":
         raw_len = len(story.get("raw", ""))
@@ -631,7 +740,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "⏳ Đang tạo toàn bộ gói sản xuất...\n\n"
             f"📄 Truyện: {raw_len:,} ký tự — {num_chunks} phần kịch bản\n"
-            f"⏱ Ước tính: ~{wait_secs} giây\n\nVui lòng chờ..."
+            f"⏱ Ước tính: ~{wait_secs} giây\n"
+            "Bao gồm: Kịch bản + SEO + Thumbnail + Ảnh minh hoạ\n\nVui lòng chờ..."
         )
 
         # Chạy song song: script + seo + thumbnail
@@ -640,9 +750,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Lưu script vào story trước khi gen SEO/thumbnail (dùng script làm context)
         ctx.user_data["story"]["script"] = script_result
 
-        seo_result, thumb_result = await asyncio.gather(
+        seo_result, thumb_result, illus_result = await asyncio.gather(
             loop.run_in_executor(None, lambda: gen_seo(ctx.user_data["story"])),
             loop.run_in_executor(None, lambda: gen_thumbnail(ctx.user_data["story"])),
+            loop.run_in_executor(None, lambda: gen_illustration(ctx.user_data["story"])),
         )
 
         ctx.user_data["script_history"] = [
@@ -657,6 +768,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # FIX: gửi plain text thay vì Markdown
         await send_long_text(query.message, "🔍 SEO PACKAGE", seo_result)
         await send_long_text(query.message, "🖼 THUMBNAIL PROMPT", thumb_result)
+        await send_long_text(query.message, "🎨 PROMPT ẢNH MINH HOẠ", illus_result)
 
         await query.message.reply_text(
             "✅ Gói sản xuất hoàn tất!\nBạn muốn chỉnh sửa kịch bản không?",
