@@ -162,6 +162,23 @@ def clean_script_text(text: str) -> str:
             prev_blank = False
     return "\n".join(cleaned).strip()
 
+async def send_illustration_as_file(target, content: str, caption: str = ""):
+    """
+    Gửi bộ prompt ảnh minh hoạ dưới dạng file .txt đính kèm trong Telegram.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"illustration_prompts_{timestamp}.txt"
+
+    file_bytes = BytesIO(content.strip().encode("utf-8"))
+    file_bytes.name = filename
+
+    caption_text = caption or "🎨 Bộ prompt ảnh minh hoạ — sẵn sàng dùng với Gemini / Nano Banana!"
+    await target.reply_document(
+        document=file_bytes,
+        filename=filename,
+        caption=caption_text
+    )
+
 async def send_script_as_file(target, script: str, version: int, story: dict, caption: str = ""):
     """
     Gửi kịch bản dưới dạng file .txt đính kèm trong Telegram.
@@ -475,13 +492,12 @@ FORMAT TRẢ VỀ cho mỗi ảnh:
 
 ANH [số] - [tên tình tiết ngắn gọn tiếng Việt]
 THOI LUONG: [10s / 20s / 30s / 45s / 1 phut]
-PROMPT_EN: [prompt tiếng Anh 50-80 từ mô tả scene, nhân vật, cảm xúc, ánh sáng, bối cảnh]
-NEGATIVE: blurry, text, watermark, realistic photo, adult proportions, dark horror
+PROMPT_EN: [prompt tiếng Anh 50-80 từ, viết dưới dạng câu mô tả tự nhiên đầy đủ (không dùng cú pháp tham số như --ar, --v, dấu :: của Midjourney) mô tả scene, nhân vật, cảm xúc, ánh sáng, bối cảnh, tỷ lệ khung hình 16:9]
 
 Phân cách mỗi block ảnh bằng 1 dòng trống. Sau tất cả ảnh thêm:
 TONG SO ANH: [số]
 TONG THOI LUONG: [tổng thời lượng ước tính]
-TOOL GỢI Ý: Midjourney v6 hoặc Flux Pro, dùng ảnh đầu tiên làm style reference cho các ảnh sau để nhân vật nhất quán.""",
+GHI CHU: Prompt được viết dạng mô tả tự nhiên, tối ưu để dùng trực tiếp với Gemini (Nano Banana) hoặc các công cụ tạo ảnh AI tương tự. Dùng ảnh đầu tiên làm ảnh tham chiếu phong cách cho các ảnh sau để nhân vật nhất quán.""",
         model="claude-sonnet-4-6",
         tokens=6500
     )
@@ -755,10 +771,9 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⏱ Khoảng ~30 giây..."
         )
         result = await loop.run_in_executor(None, lambda: gen_illustration(story))
-        await send_long_text(
-            query.message,
-            "🎨 PROMPT ẢNH MINH HOẠ",
-            result,
+        await send_illustration_as_file(query.message, result)
+        await query.message.reply_text(
+            "✅ Đã xuất bộ prompt ảnh minh hoạ ra file!\nBạn muốn làm gì tiếp theo?",
             reply_markup=other_output_menu()
         )
 
@@ -797,7 +812,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         await send_long_text(query.message, "🔍 SEO PACKAGE", seo_result)
         await send_long_text(query.message, "🖼 THUMBNAIL PROMPT", thumb_result)
-        await send_long_text(query.message, "🎨 PROMPT ẢNH MINH HOẠ", illus_result)
+        await send_illustration_as_file(query.message, illus_result)
 
         await query.message.reply_text(
             "✅ Gói sản xuất hoàn tất!\nBạn muốn chỉnh sửa kịch bản không?",
