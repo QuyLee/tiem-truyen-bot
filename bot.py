@@ -76,7 +76,7 @@ async def fetch_url_content(url: str) -> str:
             text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL)
             text = re.sub(r'<[^>]+>', ' ', text)
             text = re.sub(r'\s+', ' ', text).strip()
-            return text[:6000]
+            return text[:25000]  # đủ cho truyện dài
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -155,10 +155,35 @@ def _analyze_sync(raw: str) -> dict:
         "genre":    lines.get("THỂ LOẠI", "cổ tích"),
         "tone":     lines.get("TÔNG GIỌNG", "ấm áp"),
         "duration": lines.get("ĐỘ DÀI GỢI Ý", "8-12 phút"),
-        "raw":      raw[:5000]
+        "raw":      raw[:25000]
     }
 
 # ─── Sinh kịch bản ────────────────────────────────────────────────────────────
+
+# Mỗi chunk tối đa ~3000 ký tự nội dung thô → ra ~1500 token kịch bản
+# Truyện ngắn (<4000 ký tự): 1 lần gọi
+# Truyện trung (~4000–12000): chia 3 phần (mở đầu / thân / kết)
+# Truyện dài (>12000): chia nhiều phần tự động
+CHUNK_SIZE = 4000
+
+def _chunk_raw(raw: str) -> list[str]:
+    """Chia nội dung thô thành các đoạn, cắt tại dấu câu gần nhất."""
+    if len(raw) <= CHUNK_SIZE:
+        return [raw]
+    chunks = []
+    while raw:
+        if len(raw) <= CHUNK_SIZE:
+            chunks.append(raw)
+            break
+        # Tìm điểm cắt tự nhiên: ưu tiên xuống dòng, rồi dấu chấm
+        cut = raw.rfind('\n', CHUNK_SIZE // 2, CHUNK_SIZE)
+        if cut == -1:
+            cut = raw.rfind('. ', CHUNK_SIZE // 2, CHUNK_SIZE)
+        if cut == -1:
+            cut = CHUNK_SIZE
+        chunks.append(raw[:cut].strip())
+        raw = raw[cut:].strip()
+    return chunks
 
 def gen_script(story: dict) -> str:
     tone_note = (
@@ -166,21 +191,74 @@ def gen_script(story: dict) -> str:
         if "lạnh" in story["tone"] or "triết" in story["tone"]
         else "Tông giọng: ấm, huyền bí, cuốn hút — như người kể chuyện bên lửa trại."
     )
-    return call(
-        SYSTEM_SCRIPT,
-        f"Viết kịch bản TTS hoàn chỉnh cho câu chuyện sau.\n\n"
+    base_instruction = (
         f"THỂ LOẠI: {story['genre']}\n{tone_note}\n"
-        f"ĐỘ DÀI MỤC TIÊU: {story['duration']}\n\n"
-        f"NỘI DUNG GỐC:\n{story['raw']}\n\n"
-        "Cấu trúc: Hook → Phát triển → Cao trào → Kết luận. "
-        "Văn bản thuần, không gạch đầu dòng, không chú thích, không hiệu ứng.",
-        model="claude-sonnet-4-6", tokens=2000
+        "Quy tắc: đoạn 3-5 câu, văn bản thuần TTS, không gạch đầu dòng, không chú thích, không hiệu ứng."
     )
+
+    chunks = _chunk_raw(story["raw"])
+    total = len(chunks)
+
+    # ── Truyện ngắn: 1 lần gọi ───────────────────────────────────────────────
+    if total == 1:
+        return call(
+            SYSTEM_SCRIPT,
+            f"Viết kịch bản TTS HOÀN CHỈNH cho câu chuyện sau.\n\n"
+            f"{base_instruction}\n"
+            f"ĐỘ DÀI MỤC TIÊU: {story['duration']}\n\n"
+            f"NỘI DUNG GỐC:\n{chunks[0]}\n\n"
+            "Cấu trúc bắt buộc: Hook mạnh → Phát triển đầy đủ → Cao trào → Kết luận gợi suy ngẫm.\n"
+            "Viết ĐỦ toàn bộ câu chuyện, không bỏ sót chi tiết nào.",
+            model="claude-sonnet-4-6", tokens=8000
+        )
+
+    # ── Truyện dài: viết theo phần rồi ghép ──────────────────────────────────
+    parts_text = []
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            # Phần mở đầu: có Hook
+            prompt = (
+                f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
+                f"{base_instruction}\n\n"
+                f"ĐÂY LÀ PHẦN 1/{total} — PHẦN MỞ ĐẦU.\n"
+                "Yêu cầu: viết Hook cực mạnh (15 giây đầu gây tò mò) rồi khai triển nội dung phần này.\n"
+                "Kết thúc phần bằng câu dẫn dắt sang phần tiếp theo (không kết thúc câu chuyện).\n\n"
+                f"NỘI DUNG PHẦN NÀY:\n{chunk}"
+            )
+        elif i == total - 1:
+            # Phần cuối: có kết luận
+            prompt = (
+                f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
+                f"{base_instruction}\n\n"
+                f"ĐÂY LÀ PHẦN {i+1}/{total} — PHẦN KẾT.\n"
+                "Yêu cầu: khai triển đầy đủ nội dung phần này, dẫn đến Cao trào rõ ràng,\n"
+                "kết thúc bằng Kết luận triết lý gợi suy ngẫm và Call to Action.\n\n"
+                f"NỘI DUNG PHẦN NÀY:\n{chunk}"
+            )
+        else:
+            # Phần giữa: phát triển liên tục
+            prompt = (
+                f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
+                f"{base_instruction}\n\n"
+                f"ĐÂY LÀ PHẦN {i+1}/{total} — PHẦN THÂN.\n"
+                "Yêu cầu: khai triển đầy đủ nội dung phần này, giữ mạch truyện liên tục.\n"
+                "Không mở đầu lại từ đầu, không kết thúc câu chuyện.\n\n"
+                f"NỘI DUNG PHẦN NÀY:\n{chunk}"
+            )
+        part = call(SYSTEM_SCRIPT, prompt, model="claude-sonnet-4-6", tokens=4000)
+        parts_text.append(part)
+
+    # Ghép tất cả phần lại, cách nhau 1 dòng trống
+    return "\n\n".join(parts_text)
 
 def revise_script(history: list, feedback: str) -> str:
     """Chỉnh sửa kịch bản dựa trên góp ý, giữ toàn bộ lịch sử hội thoại"""
-    messages = history + [{"role": "user", "content": f"Góp ý của tôi: {feedback}\n\nHãy chỉnh sửa kịch bản theo góp ý trên và trả về kịch bản hoàn chỉnh đã được cải thiện."}]
-    return call_with_history(SYSTEM_REVISE, messages, model="claude-sonnet-4-6", tokens=2000)
+    messages = history + [{"role": "user", "content": (
+        f"Góp ý của tôi: {feedback}\n\n"
+        "Hãy chỉnh sửa kịch bản theo góp ý trên và trả về TOÀN BỘ kịch bản hoàn chỉnh đã được cải thiện. "
+        "Không được cắt ngắn hay bỏ sót đoạn nào."
+    )}]
+    return call_with_history(SYSTEM_REVISE, messages, model="claude-sonnet-4-6", tokens=8000)
 
 def gen_seo(story: dict) -> str:
     return call(
@@ -358,14 +436,24 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Kịch bản ──────────────────────────────────────────────────────────────
     if action == "script":
-        await query.edit_message_text("⏳ Đang viết kịch bản TTS... (~30 giây)")
+        raw_len = len(story.get("raw", ""))
+        num_chunks = max(1, (raw_len + CHUNK_SIZE - 1) // CHUNK_SIZE)
+        wait_secs = num_chunks * 30
+        wait_msg = (
+            "⏳ Đang viết kịch bản TTS...\n\n"
+            f"📄 Độ dài truyện: {raw_len:,} ký tự\n"
+            f"🔀 Chia thành {num_chunks} phần, viết tuần tự\n"
+            f"⏱ Ước tính: ~{wait_secs} giây\n\n"
+            "Vui lòng chờ, đang xử lý từng phần..."
+        )
+        await query.edit_message_text(wait_msg)
         result = await loop.run_in_executor(None, lambda: gen_script(story))
 
         # Lưu lịch sử hội thoại để dùng cho vòng lặp chỉnh sửa
         ctx.user_data["script_history"] = [
             {"role": "user", "content": (
                 f"Viết kịch bản TTS cho câu chuyện:\nTHỂ LOẠI: {story['genre']}\n"
-                f"TÔNG: {story['tone']}\nNỘI DUNG: {story['raw'][:2000]}"
+                f"TÔNG: {story['tone']}\nNỘI DUNG: {story['raw']}"
             )},
             {"role": "assistant", "content": result}
         ]
@@ -419,14 +507,21 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Tất cả ────────────────────────────────────────────────────────────────
     elif action == "all":
-        await query.edit_message_text("⏳ Đang tạo toàn bộ gói sản xuất... (~60 giây)")
+        raw_len = len(story.get("raw", ""))
+        num_chunks = max(1, (raw_len + CHUNK_SIZE - 1) // CHUNK_SIZE)
+        wait_secs = num_chunks * 30 + 30
+        await query.edit_message_text(
+            "⏳ Đang tạo toàn bộ gói sản xuất...\n\n"
+            f"📄 Truyện: {raw_len:,} ký tự — {num_chunks} phần kịch bản\n"
+            f"⏱ Ước tính: ~{wait_secs} giây\n\nVui lòng chờ..."
+        )
         script, seo, thumb = await asyncio.gather(
             loop.run_in_executor(None, lambda: gen_script(story)),
             loop.run_in_executor(None, lambda: gen_seo(story)),
             loop.run_in_executor(None, lambda: gen_thumbnail(story)),
         )
         ctx.user_data["script_history"] = [
-            {"role": "user", "content": f"Viết kịch bản TTS cho câu chuyện:\nTHỂ LOẠI: {story['genre']}\nTÔNG: {story['tone']}\nNỘI DUNG: {story['raw'][:2000]}"},
+            {"role": "user", "content": f"Viết kịch bản TTS cho câu chuyện:\nTHỂ LOẠI: {story['genre']}\nTÔNG: {story['tone']}\nNỘI DUNG: {story['raw']}"},
             {"role": "assistant", "content": script}
         ]
         ctx.user_data["revision_count"] = 0
