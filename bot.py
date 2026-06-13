@@ -19,17 +19,41 @@ SYSTEM_ANALYST = """Bạn là trợ lý phân tích nội dung cho kênh YouTube
 Nhiệm vụ: đọc nội dung thô → tóm tắt cốt lõi câu chuyện trong 3–5 câu, xác định thể loại (cổ tích/dân gian/triết lý/tâm lý), tông giọng phù hợp (ấm áp/lạnh/triết lý), và độ dài video gợi ý.
 Trả lời ngắn gọn, súc tích, bằng tiếng Việt."""
 
-SYSTEM_SCRIPT = """Bạn là biên kịch chuyên nghiệp cho kênh "Tiệm Truyện Nhỏ Nhỏ".
+BIBI_INTRO_TEMPLATE = (
+    'Tích tắc, tích tắc… Đồng hồ đã điểm giờ đi ngủ rồi! '
+    'Bibi xin chào các bạn nhỏ đáng yêu của "Thế Giới Cổ Tích Của Bibi"! '
+    'Hôm nay, chiếc đuôi phát sáng của Bibi đã chọn được một câu chuyện vô cùng kỳ diệu mang tên: {ten_truyen}. '
+    'Các em đã nằm ngoan chưa? Chúng mình cùng bắt đầu nhé…'
+)
+
+BIBI_OUTRO_TEMPLATE = (
+    'Câu chuyện hôm nay đến đây là hết rồi. '
+    'Các em thấy {nhan_vat} có đáng yêu không nào? '
+    'Bây giờ thì nhắm mắt lại thôi, để ánh sáng dịu dàng của Bibi canh giấc ngủ cho các em nhé. '
+    'Đừng quên nhấn thích và đăng ký kênh ủng hộ Bibi nha! '
+    'Chúc các bé ngủ ngon và có những giấc mơ thật đẹp! '
+    'Chào tạm biệt và hẹn gặp lại các em vào tối mai! Suỵt… ngủ ngon nhé…'
+)
+
+SYSTEM_SCRIPT = """Bạn là biên kịch chuyên nghiệp cho kênh "Tiệm Truyện Nhỏ Nhỏ" / "Thế Giới Cổ Tích Của Bibi".
 Nhiệm vụ: viết kịch bản TTS hoàn chỉnh từ nội dung câu chuyện.
+
+NHÂN VẬT DẪN TRUYỆN — BIBI:
+- Bibi là chú đom đóm nhỏ đáng yêu, đuôi phát sáng, là người dẫn truyện xuyên suốt video cho các bé trước giờ đi ngủ.
+- MỞ ĐẦU kịch bản BẮT BUỘC dùng đúng nguyên văn mẫu lời chào sau, chỉ điền tên truyện vào chỗ {ten_truyen}:
+"Tích tắc, tích tắc… Đồng hồ đã điểm giờ đi ngủ rồi! Bibi xin chào các bạn nhỏ đáng yêu của "Thế Giới Cổ Tích Của Bibi"! Hôm nay, chiếc đuôi phát sáng của Bibi đã chọn được một câu chuyện vô cùng kỳ diệu mang tên: {ten_truyen}. Các em đã nằm ngoan chưa? Chúng mình cùng bắt đầu nhé…"
+- KẾT THÚC kịch bản BẮT BUỘC dùng đúng nguyên văn mẫu lời chào sau, chỉ điền tên nhân vật chính vào chỗ {nhan_vat}:
+"Câu chuyện hôm nay đến đây là hết rồi. Các em thấy {nhan_vat} có đáng yêu không nào? Bây giờ thì nhắm mắt lại thôi, để ánh sáng dịu dàng của Bibi canh giấc ngủ cho các em nhé. Đừng quên nhấn thích và đăng ký kênh ủng hộ Bibi nha! Chúc các bé ngủ ngon và có những giấc mơ thật đẹp! Chào tạm biệt và hẹn gặp lại các em vào tối mai! Suỵt… ngủ ngon nhé…"
+- TRONG THÂN TRUYỆN: Bibi đóng vai người dẫn truyện, xen vào những lời bình nhẹ nhàng, hỏi các bé, hoặc bày tỏ cảm xúc (ngạc nhiên, hồi hộp, ấm áp) ở những điểm chuyển cảnh quan trọng — khoảng 3-5 lần xen trong toàn bộ kịch bản, mỗi lần 1-2 câu ngắn, giọng dịu dàng dành cho trẻ nhỏ trước giờ ngủ.
+- Giọng của Bibi luôn ấm áp, nhẹ nhàng, dịu dàng — phù hợp ru ngủ trẻ em, KHÔNG dùng tông lạnh/triết lý Machiavellian dù thể loại là gì.
 
 QUY TẮC BẮT BUỘC:
 - Chia thành đoạn ngắn 3–5 câu, mỗi đoạn một ý chính duy nhất
 - Ngôn ngữ tự nhiên như người đang kể, nhịp điệu thăng trầm, có trọng lượng
-- Cấu trúc viral: Hook mạnh (câu hỏi/sự kiện gây tò mò) → Phát triển → Cao trào → Kết luận gợi suy ngẫm
+- Cấu trúc: Lời chào Bibi (mở đầu) → Hook nội dung truyện → Phát triển → Cao trào → Kết luận gợi suy ngẫm nhẹ nhàng → Lời chào tạm biệt Bibi (kết thúc)
 - KHÔNG gạch đầu dòng, KHÔNG chú thích kỹ thuật, KHÔNG hiệu ứng âm thanh
 - KHÔNG dùng: "và rồi", "thế là", "thực ra thì", "có thể nói"
 - Câu ngắn, rõ ràng, dễ đọc TTS mượt
-- Tông giọng tuỳ thể loại: cổ tích → ấm, huyền bí / triết lý → lạnh, kiểm soát, Machiavellian
 - Viết lại nâng cao chất lượng, đảm bảo không vi phạm bản quyền YouTube
 - Đầu ra: văn bản thuần, hạn chế xuống dòng thừa"""
 
@@ -42,6 +66,7 @@ QUY TẮC:
 - Nếu góp ý cụ thể (đoạn X, câu Y) → chỉ sửa đúng chỗ đó
 - Giữ đúng format TTS: đoạn 3-5 câu, văn bản thuần, không ký hiệu thừa
 - Giữ tông giọng gốc (ấm áp/triết lý) trừ khi được yêu cầu đổi
+- Giữ nguyên lời chào mở đầu và lời tạm biệt kết thúc của Bibi trừ khi được yêu cầu đổi
 - Trả về kịch bản ĐÃ CHỈNH SỬA HOÀN CHỈNH, không giải thích"""
 
 SYSTEM_SEO = """Bạn là chuyên gia SEO YouTube cho kênh kể chuyện tiếng Việt "Tiệm Truyện Nhỏ Nhỏ".
@@ -205,13 +230,15 @@ def _chunk_raw(raw: str) -> list[str]:
 
 def gen_script(story: dict) -> str:
     tone_note = (
-        "Tông giọng: lạnh, kiểm soát, Machiavellian — câu ngắn, trọng lượng, triết lý sắc bén."
-        if "lạnh" in story["tone"] or "triết" in story["tone"]
-        else "Tông giọng: ấm, huyền bí, cuốn hút — như người kể chuyện bên lửa trại."
+        "Tông giọng: ấm áp, dịu dàng, ru ngủ — Bibi kể chuyện cho các bé trước giờ đi ngủ, "
+        "ngay cả những đoạn cao trào cũng giữ nhịp nhẹ nhàng, không gây sợ hãi quá mức."
     )
     base_instruction = (
         f"THỂ LOẠI: {story['genre']}\n{tone_note}\n"
-        "Quy tắc: đoạn 3-5 câu, văn bản thuần TTS, không gạch đầu dòng, không chú thích, không hiệu ứng."
+        "Quy tắc: đoạn 3-5 câu, văn bản thuần TTS, không gạch đầu dòng, không chú thích, không hiệu ứng.\n"
+        "BẮT BUỘC: mở đầu bằng lời chào của Bibi (theo mẫu cố định trong system prompt, điền tên truyện phù hợp), "
+        "kết thúc bằng lời tạm biệt của Bibi (theo mẫu cố định, điền tên nhân vật chính của truyện), "
+        "và xen 3-5 lời bình ngắn của Bibi trong thân truyện ở các điểm chuyển cảnh."
     )
 
     chunks = _chunk_raw(story["raw"])
@@ -224,7 +251,7 @@ def gen_script(story: dict) -> str:
             f"{base_instruction}\n"
             f"ĐỘ DÀI MỤC TIÊU: {story['duration']}\n\n"
             f"NỘI DUNG GỐC:\n{chunks[0]}\n\n"
-            "Cấu trúc bắt buộc: Hook mạnh → Phát triển đầy đủ → Cao trào → Kết luận gợi suy ngẫm.\n"
+            "Cấu trúc bắt buộc: Lời chào Bibi → Hook mạnh → Phát triển đầy đủ → Cao trào → Kết luận gợi suy ngẫm → Lời tạm biệt Bibi.\n"
             "Viết ĐỦ toàn bộ câu chuyện, không bỏ sót chi tiết nào.",
             model="claude-sonnet-4-6", tokens=8000
         )
@@ -236,8 +263,9 @@ def gen_script(story: dict) -> str:
                 f"Bạn đang viết kịch bản TTS cho một câu chuyện dài ({total} phần).\n"
                 f"{base_instruction}\n\n"
                 f"ĐÂY LÀ PHẦN 1/{total} — PHẦN MỞ ĐẦU.\n"
-                "Yêu cầu: viết Hook cực mạnh (15 giây đầu gây tò mò) rồi khai triển nội dung phần này.\n"
-                "Kết thúc phần bằng câu dẫn dắt sang phần tiếp theo (không kết thúc câu chuyện).\n\n"
+                "Bắt buộc mở đầu bằng lời chào của Bibi theo mẫu cố định (điền tên truyện).\n"
+                "Yêu cầu: sau lời chào Bibi, viết Hook cực mạnh (15 giây đầu gây tò mò) rồi khai triển nội dung phần này.\n"
+                "Kết thúc phần bằng câu dẫn dắt sang phần tiếp theo (không kết thúc câu chuyện, KHÔNG dùng lời tạm biệt của Bibi ở phần này).\n\n"
                 f"NỘI DUNG PHẦN NÀY:\n{chunk}"
             )
         elif i == total - 1:
@@ -246,7 +274,8 @@ def gen_script(story: dict) -> str:
                 f"{base_instruction}\n\n"
                 f"ĐÂY LÀ PHẦN {i+1}/{total} — PHẦN KẾT.\n"
                 "Yêu cầu: khai triển đầy đủ nội dung phần này, dẫn đến Cao trào rõ ràng,\n"
-                "kết thúc bằng Kết luận triết lý gợi suy ngẫm và Call to Action.\n\n"
+                "kết thúc bằng Kết luận triết lý gợi suy ngẫm nhẹ nhàng.\n"
+                "Bắt buộc kết thúc bằng lời tạm biệt của Bibi theo mẫu cố định (điền tên nhân vật chính).\n\n"
                 f"NỘI DUNG PHẦN NÀY:\n{chunk}"
             )
         else:
@@ -255,7 +284,8 @@ def gen_script(story: dict) -> str:
                 f"{base_instruction}\n\n"
                 f"ĐÂY LÀ PHẦN {i+1}/{total} — PHẦN THÂN.\n"
                 "Yêu cầu: khai triển đầy đủ nội dung phần này, giữ mạch truyện liên tục.\n"
-                "Không mở đầu lại từ đầu, không kết thúc câu chuyện.\n\n"
+                "Không mở đầu lại từ đầu, không kết thúc câu chuyện, KHÔNG dùng lời chào/tạm biệt cố định của Bibi ở phần này "
+                "(chỉ xen 1-2 lời bình ngắn của Bibi nếu phù hợp).\n\n"
                 f"NỘI DUNG PHẦN NÀY:\n{chunk}"
             )
         part = call(SYSTEM_SCRIPT, prompt, model="claude-sonnet-4-6", tokens=4000)
@@ -271,7 +301,7 @@ def revise_script(history: list, feedback: str) -> str:
     )}]
     return call_with_history(SYSTEM_REVISE, messages, model="claude-sonnet-4-6", tokens=8000)
 
-# ─── FIX 1: gen_seo — prompt đầy đủ, 5 tiêu đề viral + phân tích + tags ──────
+# ─── gen_seo — prompt đầy đủ, 5 tiêu đề viral + phân tích + tags ──────────────
 
 def gen_seo(story: dict) -> str:
     """
@@ -326,7 +356,7 @@ TAGS (20 tags, phân cách bằng dấu phẩy, không đánh số):
         tokens=1200
     )
 
-# ─── FIX 2: gen_thumbnail — prompt đầy đủ, có BiBi + bầu trời đêm + chibi 3D ─
+# ─── gen_thumbnail — prompt đầy đủ, có BiBi + bầu trời đêm + chibi 3D ─────────
 
 def gen_thumbnail(story: dict, chosen_title: str = "") -> str:
     """
@@ -453,7 +483,7 @@ TONG SO ANH: [số]
 TONG THOI LUONG: [tổng thời lượng ước tính]
 TOOL GỢI Ý: Midjourney v6 hoặc Flux Pro, dùng ảnh đầu tiên làm style reference cho các ảnh sau để nhân vật nhất quán.""",
         model="claude-sonnet-4-6",
-        tokens=6000
+        tokens=6500
     )
 
 # ─── Keyboards ────────────────────────────────────────────────────────────────
@@ -572,7 +602,7 @@ async def process_revision(update: Update, ctx: ContextTypes.DEFAULT_TYPE, feedb
         {"role": "user", "content": f"Góp ý: {feedback}\nHãy chỉnh sửa kịch bản theo góp ý và trả về hoàn chỉnh."},
         {"role": "assistant", "content": revised}
     ]
-    # FIX: cập nhật script mới nhất vào story để SEO/thumbnail dùng
+    # cập nhật script mới nhất vào story để SEO/thumbnail dùng
     ctx.user_data["story"]["script"] = revised
 
     await msg.delete()
@@ -663,7 +693,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=other_output_menu()
         )
 
-    # ── FIX: SEO — không dùng parse_mode, gửi plain text ─────────────────────
+    # ── SEO — không dùng parse_mode, gửi plain text ──────────────────────────
     elif action == "seo":
         await query.edit_message_text("⏳ Đang tối ưu SEO... (~20 giây)")
         result = await loop.run_in_executor(None, lambda: gen_seo(story))
@@ -679,7 +709,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=other_output_menu()
         )
 
-    # ── FIX: Thumbnail — không dùng parse_mode, prompt đầy đủ ───────────────
+    # ── Thumbnail — không dùng parse_mode, prompt đầy đủ ─────────────────────
     elif action == "thumbnail":
         await query.edit_message_text("⏳ Đang tạo prompt thumbnail... (~20 giây)")
 
@@ -765,7 +795,6 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         await send_script_as_file(query.message, script_result, version=1, story=story)
 
-        # FIX: gửi plain text thay vì Markdown
         await send_long_text(query.message, "🔍 SEO PACKAGE", seo_result)
         await send_long_text(query.message, "🖼 THUMBNAIL PROMPT", thumb_result)
         await send_long_text(query.message, "🎨 PROMPT ẢNH MINH HOẠ", illus_result)
